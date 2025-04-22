@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  api:
+    container_name: maritime-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app
+      - ./storage:/app/storage
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    networks:
+      - maritime-net
+
+  db:
+    container_name: maritime-db
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - maritime-net
+
+  redis:
+    container_name: maritime-redis
+    image: redis:7
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - maritime-net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  maritime-net:
+    driver: bridge

@@ -1,0 +1,11 @@
+{
+  "vessels_active": 12,
+  "avg_tce": 14500,
+  "co2_emissions": 1870,
+  "routes_active": 9,
+  "monthly_pnl": [
+    { "month": "Jan", "pnl": 230000 },
+    { "month": "Feb", "pnl": 180000 },
+    { "month": "Mar", "pnl": 200000 }
+  ]
+}

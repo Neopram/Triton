@@ -1,0 +1,174 @@
+# Docker Compose configuration for Triton Maritime AI Platform
+version: '3.8'
+
+services:
+  # Backend API service
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    container_name: triton-backend
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app
+      - backend_logs:/app/logs
+      - backend_data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DEEPSEEK_API_ENDPOINT=http://deepseek:8000
+      - PHI3_API_ENDPOINT=http://phi3:8001
+      - REDIS_HOST=redis
+      - POSTGRES_HOST=postgres
+    depends_on:
+      - redis
+      - postgres
+      - deepseek
+      - phi3
+    restart: unless-stopped
+    networks:
+      - triton-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Frontend service
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    container_name: triton-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - triton-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # DeepSeek AI service (cloud processing)
+  deepseek:
+    build:
+      context: .
+      dockerfile: docker/deepseek.Dockerfile
+    container_name: triton-deepseek
+    ports:
+      - "8000:8000"
+    volumes:
+      - deepseek_data:/app/model_cache
+      - deepseek_logs:/app/logs
+    environment:
+      - DEEPSEEK_MODEL=deepseek-ai/deepseek-coder-33b-instruct
+      - DEEPSEEK_PORT=8000
+      - DEEPSEEK_IDLE_TIMEOUT=3600
+      - DEEPSEEK_CACHE_TTL=3600
+      - DEEPSEEK_CACHE_ENABLED=true
+      - DEEPSEEK_MAX_TOKENS=2048
+    restart: unless-stopped
+    networks:
+      - triton-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Phi-3 AI service (local processing)
+  phi3:
+    build:
+      context: .
+      dockerfile: docker/phi3.Dockerfile
+    container_name: triton-phi3
+    ports:
+      - "8001:8001"
+    volumes:
+      - phi3_data:/app/model_cache
+      - phi3_logs:/app/logs
+    environment:
+      - PHI3_MODEL_PATH=microsoft/phi-3-mini-4k-instruct
+      - PHI3_PORT=8001
+      - PHI3_IDLE_TIMEOUT=1800
+      - PHI3_CACHE_TTL=3600
+      - PHI3_USE_4BIT=true
+      - PHI3_LOW_CPU_MEM_USAGE=true
+    restart: unless-stopped
+    networks:
+      - triton-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Redis for caching
+  redis:
+    image: redis:7.0-alpine
+    container_name: triton-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    networks:
+      - triton-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: triton-postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=triton_db
+    restart: unless-stopped
+    networks:
+      - triton-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+# Docker volumes for persistent data
+volumes:
+  backend_logs:
+  backend_data:
+  deepseek_data:
+  deepseek_logs:
+  phi3_data:
+  phi3_logs:
+  redis_data:
+  postgres_data:
+
+# Docker networks
+networks:
+  triton-network:
+    driver: bridge
